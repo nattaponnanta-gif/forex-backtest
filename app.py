@@ -1,8 +1,3 @@
-# 1. ติดตั้งไลบรารี Streamlit และ yfinance (สำหรับดึงข้อมูลราคาฟรี)
-!pip install streamlit yfinance pyngrok pandas numpy
-
-# 2. สร้างไฟล์แอปพลิเคชันชื่อ app.py ด้วย Python
-%%writefile app.py
 import streamlit as st
 import yfinance as yf
 import pandas as pd
