@@ -2,14 +2,13 @@
 <html lang="th">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Forex TradingView Style Backtest</title>
+    <title>Forex TradingView Style Backtest & Replay</title>
     <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #131722; color: #d1d4dc; margin: 0; padding: 20px; }
         h2 { color: #26a69a; margin-top: 0; }
         .container { display: flex; gap: 20px; }
-        #chart-container { flex: 3; height: 600px; background: #1e222d; border-radius: 8px; padding: 10px; position: relative; }
+        #chart-container { flex: 3; height: 500px; background: #1e222d; border-radius: 8px; padding: 10px; }
         .control-panel { flex: 1; background: #1e222d; border-radius: 8px; padding: 20px; box-sizing: border-box; }
         .btn { width: 100%; padding: 12px; margin-bottom: 10px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 16px; }
         .btn-buy { background-color: #26a69a; color: white; }
@@ -25,7 +24,7 @@
         <div id="chart-container"></div>
         <div class="control-panel">
             <h3>🕹️ ควบคุมการซ้อมเทรด</h3>
-            <p>เงินทุนพอร์ต: <span id="balance" style="color: #26a69a; font-weight: bold;">\$10,000.00</span></p>
+            <p>เงินทุนพอร์ต: <span id="balance" style="color: #26a69a; font-weight: bold;">$10,000.00</span></p>
             <p>สถานะปัจจุบัน: <span id="position-status" style="color: #ffa726;">Flat (ไม่มีออร์เดอร์)</span></p>
             
             <button class="btn btn-next" onclick="nextBar()">▶️ ไปแท่งถัดไป (+1 Bar)</button>
@@ -37,34 +36,20 @@
             <div class="stats">
                 <h4>📊 สถิติการเทรด</h4>
                 <p>ราคาเข้าล่าสุด: <span id="entry-price">-</span></p>
-                <p>กำไร/ขาดทุนรวม: <span id="total-profit">\$0.00</span></p>
+                <p>กำไร/ขาดทุนรวม: <span id="total-profit">$0.00</span></p>
                 <p id="progress-info" style="color: #787b86; margin-top: 15px;"></p>
             </div>
         </div>
     </div>
 
     <script>
-        // ตรวจสอบการโหลดไลบรารี
-        if (typeof LightweightCharts === 'undefined') {
-            alert('กำลังโหลดไลบรารีกราฟ กรุณารอสักครู่แล้วรีเฟรชหน้าเว็บอีกครั้ง');
-        }
+        var chart, candlestickSeries;
+        var visibleCount = 5; 
+        var balance = 10000.0;
+        var position = null;
+        var entryPrice = 0;
 
-        const chartContainer = document.getElementById('chart-container');
-        const chart = LightweightCharts.createChart(chartContainer, {
-            width: chartContainer.clientWidth,
-            height: 580,
-            layout: { background: { color: '#1e222d' }, textColor: '#d1d4dc' },
-            grid: { vertLines: { color: '#2a2e39' }, horzLines: { color: '#2a2e39' } },
-            timeScale: { timeVisible: true, secondsVisible: false },
-        });
-
-        const candlestickSeries = chart.addCandlestickSeries({
-            upColor: '#26a69a', downColor: '#ef5350', borderVisible: false,
-            wickUpColor: '#26a69a', wickDownColor: '#ef5350',
-        });
-
-        // ข้อมูลราคาย้อนหลังจำลองสำหรับฝึกซ้อม
-        const fullData = [
+        var fullData = [
             { time: '2026-01-01', open: 1.0850, high: 1.0900, low: 1.0820, close: 1.0880 },
             { time: '2026-01-02', open: 1.0880, high: 1.0920, low: 1.0860, close: 1.0910 },
             { time: '2026-01-03', open: 1.0910, high: 1.0950, low: 1.0890, close: 1.0930 },
@@ -74,23 +59,33 @@
             { time: '2026-01-07', open: 1.0940, high: 1.0990, low: 1.0930, close: 1.0980 },
             { time: '2026-01-08', open: 1.0980, high: 1.1020, low: 1.0950, close: 1.1010 },
             { time: '2026-01-09', open: 1.1010, high: 1.1030, low: 1.0970, close: 1.0980 },
-            { time: '2026-01-10', open: 1.0980, high: 1.1050, low: 1.0960, close: 1.1040 },
-            { time: '2026-01-11', open: 1.1040, high: 1.1080, low: 1.1000, close: 1.1020 },
-            { time: '2026-01-12', open: 1.1020, high: 1.1060, low: 1.0990, close: 1.1050 }
+            { time: '2026-01-10', open: 1.0980, high: 1.1050, low: 1.0960, close: 1.1040 }
         ];
 
-        let visibleCount = 5; 
-        let balance = 10000.0;
-        let position = null;
-        let entryPrice = 0;
+        window.onload = function() {
+            var chartContainer = document.getElementById('chart-container');
+            chart = LightweightCharts.createChart(chartContainer, {
+                width: chartContainer.clientWidth,
+                height: 480,
+                layout: { background: { color: '#1e222d' }, textColor: '#d1d4dc' },
+                grid: { vertLines: { color: '#2a2e39' }, horzLines: { color: '#2a2e39' } },
+                timeScale: { timeVisible: true, secondsVisible: false },
+            });
+
+            candlestickSeries = chart.addCandlestickSeries({
+                upColor: '#26a69a', downColor: '#ef5350', borderVisible: false,
+                wickUpColor: '#26a69a', wickDownColor: '#ef5350',
+            });
+
+            updateChart();
+        };
 
         function updateChart() {
-            const currentSlice = fullData.slice(0, visibleCount);
+            if (!candlestickSeries) return;
+            var currentSlice = fullData.slice(0, visibleCount);
             candlestickSeries.setData(currentSlice);
-            document.getElementById('progress-info').innerText = `แท่งเทียนที่: ${visibleCount} / ${fullData.length}`;
+            document.getElementById('progress-info').innerText = 'แท่งเทียนที่: ' + visibleCount + ' / ' + fullData.length;
         }
-
-        updateChart();
 
         function nextBar() {
             if (visibleCount < fullData.length) {
@@ -102,30 +97,21 @@
         }
 
         function openTrade(type) {
-            if (position !== null) {
-                alert("คุณมีออร์เดอร์ที่เปิดอยู่แล้ว กรุณาปิดออร์เดอร์ก่อน");
-                return;
-            }
+            if (position !== null) { alert("คุณมีออร์เดอร์เปิดอยู่"); return; }
             position = type;
             entryPrice = fullData[visibleCount - 1].close;
-            document.getElementById('position-status').innerText = `เปิด ${type}`;
+            document.getElementById('position-status').innerText = 'เปิด ' + type;
             document.getElementById('position-status').style.color = type === 'BUY' ? '#26a69a' : '#ef5350';
             document.getElementById('entry-price').innerText = entryPrice;
         }
 
         function closeTrade() {
-            if (position === null) {
-                alert("ยังไม่มีออร์เดอร์ที่เปิดอยู่");
-                return;
-            }
-            const currentPrice = fullData[visibleCount - 1].close;
-            let profit = position === 'BUY' ? (currentPrice - entryPrice) * 10000 : (entryPrice - currentPrice) * 10000;
-            
+            if (position === null) return;
+            var currentPrice = fullData[visibleCount - 1].close;
+            var profit = position === 'BUY' ? (currentPrice - entryPrice) * 10000 : (entryPrice - currentPrice) * 10000;
             balance += profit;
-            document.getElementById('balance').innerText = `$${balance.toFixed(2)}`;
-            document.getElementById('total-profit').innerText = `$${profit.toFixed(2)}`;
-            document.getElementById('total-profit').style.color = profit >= 0 ? '#26a69a' : '#ef5350';
-            
+            document.getElementById('balance').innerText = '$' + balance.toFixed(2);
+            document.getElementById('total-profit').innerText = '$' + profit.toFixed(2);
             position = null;
             document.getElementById('position-status').innerText = 'Flat (ไม่มีออร์เดอร์)';
             document.getElementById('position-status').style.color = '#ffa726';
