@@ -1,56 +1,85 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import numpy as np
 
-st.title("📊 Forex Strategy Backtest Web App")
+st.set_page_config(layout="wide")
+st.title("📉 Forex Manual Backtest & Bar Replay App")
 
-# --- ส่วนตั้งค่าพารามิเตอร์ด้านข้าง (Sidebar) ---
-st.sidebar.header("ตั้งค่ากลยุทธ์")
-symbol = st.sidebar.selectbox("เลือกคู่เงิน", ["EURUSD=X", "GBPUSD=X", "GC=F"]) # ตัวอย่างคู่เงินและทองคำ
-start_date = st.sidebar.date_input("วันที่เริ่มต้น", pd.to_datetime("2023-01-01"))
-end_date = st.sidebar.date_input("วันที่สิ้นสุด", pd.to_datetime("2026-01-01"))
-
-fast_ma = st.sidebar.number_input("Fast MA Period", value=10)
-slow_ma = st.sidebar.number_input("Slow MA Period", value=30)
-initial_capital = st.sidebar.number_input("ทุนเริ่มต้น ($)", value=10000)
-
-# --- โหลดข้อมูลราคา ---
+# 1. โหลดข้อมูลราคาย้อนหลัง
 @st.cache_data
-def load_data(ticker, start, end):
-    df = yf.download(ticker, start=start, end=end)
-    # จัดการโครงสร้างข้อมูลให้เป็นรูปแบบมาตรฐาน
+def load_data():
+    df = yf.download("EURUSD=X", start="2025-01-01", end="2026-01-01")
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
     return df
 
-data = load_data(symbol, start_date, end_date)
+data = load_data()
 
-if not data.empty:
-    st.subheader(f"กราฟราคาและข้อมูลย้อนหลัง: {symbol}")
-    st.line_chart(data['Close'])
+# 2. ตั้งค่าระบบ Session State สำหรับควบคุมการ Replay กราฟ
+if 'index' not in st.session_state:
+    st.session_state.index = 50  # เริ่มต้นแสดง 50 แท่งแรก
+if 'balance' not in st.session_state:
+    st.session_state.balance = 10000.0
+if 'position' not in st.session_state:
+    st.session_state.position = None  # สถานะ: None, 'BUY', 'SELL'
+    st.session_state.entry_price = 0.0
 
-    # --- ระบบคำนวณ Backtest (Moving Average Crossover) ---
-    data['Fast_MA'] = data['Close'].rolling(window=int(fast_ma)).mean()
-    data['Slow_MA'] = data['Close'].rolling(window=int(slow_ma)).mean()
+# 3. แผงควบคุมการ Replay ด้านข้าง (Sidebar)
+st.sidebar.header("🕹️ ควบคุม Bar Replay")
+col_b1, col_b2 = st.sidebar.columns(2)
 
-    # สร้างสัญญาณซื้อ/ขาย
-    data['Signal'] = 0
-    data['Signal'] = np.where(data['Fast_MA'] > data['Slow_MA'], 1, -1)
-    data['Market_Returns'] = data['Close'].pct_change()
-    data['Strategy_Returns'] = data['Market_Returns'] * data['Signal'].shift(1)
+if col_b1.button("▶️ Next Bar (+1)"):
+    if st.session_state.index < len(data):
+        st.session_state.index += 1
 
-    # คำนวณกำไรสะสม
-    data['Cumulative_Strategy'] = (1 + data['Strategy_Returns'].fillna(0)).cumprod() * initial_capital
+if col_b2.button("⏩ Fast Forward (+10)"):
+    if st.session_state.index + 10 < len(data):
+        st.session_state.index += 10
 
-    st.subheader("ผลลัพธ์การ Backtest")
-    final_balance = data['Cumulative_Strategy'].iloc[-1]
-    net_profit = final_balance - initial_capital
+if st.sidebar.button("🔄 รีเซ็ตการจำลอง"):
+    st.session_state.index = 50
+    st.session_state.balance = 10000.0
+    st.session_state.position = None
 
-    col1, col2 = st.columns(2)
-    col1.metric("มูลค่าพอร์ตสุดท้าย", f"${final_balance:,.2f}", f"${net_profit:,.2f}")
+# ตัดข้อมูลตามแท่งเทียนปัจจุบันที่จำลอง
+current_data = data.iloc[:st.session_state.index]
+current_price = float(current_data['Close'].iloc[-1])
 
-    # แสดงกราฟเปรียบเทียบผลตอบแทน
-    st.line_chart(data[['Cumulative_Strategy']])
-else:
-    st.warning("ไม่พบข้อมูลในช่วงเวลาดังกล่าว กรุณาเปลี่ยนช่วงวันที่")
+# 4. แสดงผลกราฟและราคาปัจจุบัน
+st.subheader(f"คู่เงิน: EURUSD | ราคาปัจจุบัน: {current_price:.5f}")
+st.line_chart(current_data['Close'])
+
+# 5. ส่วนจำลองการกดเทรด (Trading Panel)
+col1, col2, col3 = st.columns(3)
+
+col1.metric("ทุน / พอร์ตปัจจุบัน", f"${st.session_state.balance:,.2f}")
+
+with col2:
+    if st.session_state.position is None:
+        if st.button("🟢 BUY (Long)", use_container_width=True):
+            st.session_state.position = 'BUY'
+            st.session_state.entry_price = current_price
+            st.rerun()
+        if st.button("🔴 SELL (Short)", use_container_width=True):
+            st.session_state.position = 'SELL'
+            st.session_state.entry_price = current_price
+            st.rerun()
+    else:
+        if st.button("❌ Close Position", use_container_width=True):
+            # คำนวณกำไรขาดทุนเบื้องต้น
+            if st.session_state.position == 'BUY':
+                profit = (current_price - st.session_state.entry_price) * 10000
+            else:
+                profit = (st.session_state.entry_price - current_price) * 10000
+            
+            st.session_state.balance += profit
+            st.session_state.position = None
+            st.rerun()
+
+with col3:
+    if st.session_state.position is not None:
+        st.info(f"สถานะ: เปิด {st.session_state.position}\nราคาเข้า: {st.session_state.entry_price:.5f}")
+    else:
+        st.write("สถานะ: ไม่มีออร์เดอร์ (Flat)")
+
+st.write(f"กำลังจำลองแท่งเทียนที่: {st.session_state.index} จากทั้งหมด {len(data)} แท่ง")
